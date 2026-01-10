@@ -65,43 +65,36 @@ class AfipwsCertificate(models.Model):
     cert_valid_from = fields.Datetime(
         string="Válido desde",
         compute="_compute_cert_info",
-        store=False,
         help="Fecha desde la cual el certificado es válido"
     )
     cert_valid_to = fields.Datetime(
         string="Válido hasta",
         compute="_compute_cert_info",
-        store=False,
         help="Fecha de vencimiento del certificado"
     )
     cert_subject = fields.Char(
         string="Subject (DN)",
         compute="_compute_cert_info",
-        store=False,
         help="Distinguished Name del sujeto del certificado"
     )
     cert_issuer = fields.Char(
         string="Emisor",
         compute="_compute_cert_info",
-        store=False,
         help="Entidad que emitió el certificado"
     )
     cert_serial_number = fields.Char(
         string="Número de Serie",
         compute="_compute_cert_info",
-        store=False,
         help="Número de serie del certificado"
     )
     cert_is_expired = fields.Boolean(
         string="Certificado Vencido",
         compute="_compute_cert_info",
-        store=False,
         help="Indica si el certificado está vencido"
     )
     cert_days_to_expire = fields.Integer(
         string="Días para vencer",
         compute="_compute_cert_info",
-        store=False,
         help="Cantidad de días hasta que expire el certificado"
     )
 
@@ -114,7 +107,7 @@ class AfipwsCertificate(models.Model):
             else:
                 rec.request_file = False
 
-    @api.depends('crt', 'state')
+    @api.depends('crt')
     def _compute_cert_info(self):
         """Extraer información del certificado X.509"""
         from datetime import datetime, timezone
