@@ -51,7 +51,7 @@ lxml
 - [ ] Configurar ambiente de testing con certificados de homologación
 - [ ] Documentar URLs y WSDLs de cada servicio
 
-### 🔧 FASE 1: Cryptography - Certificados y Firma CMS [EN PROGRESO]
+### 🔧 FASE 1: Cryptography - Certificados y Firma CMS [COMPLETADA]
 
 **Objetivo**: Reemplazar OpenSSL/M2Crypto con cryptography
 
@@ -95,9 +95,12 @@ def sign_cms(data, certificate, private_key):
 - [x] Crea CSR válido con DN correcto (incluyendo CUIT)
 - [x] Firma CMS compatible con WSAA de AFIP
 - [x] Tests unitarios pasan al 100%
-- [ ] Integrar con modelos existentes (afipws_certificate_alias)
+- [x] Integrar con modelos existentes (afipws_certificate_alias)
+- [x] Actualizar afipws_certificate.py para usar crypto_utils
+- [x] Crear tests de Odoo para validar integración
+- [ ] Probar en instancia Odoo real
 
-**ESTADO**: ✅ Funciones crypto implementadas y testeadas
+**ESTADO**: ✅ Funciones crypto implementadas, testeadas e integradas con modelos Odoo
 
 ---
 
@@ -424,7 +427,7 @@ l10n_ar_afipws_fe/tests/
 - [ ] Descargar todos los WSDLs
 
 #### Implementación Core
-- [ ] FASE 1: Cryptography (firma CMS)
+- [x] FASE 1: Cryptography (firma CMS)
 - [ ] FASE 2: WSAA (autenticación)
 - [ ] FASE 3: WSFEv1 (facturación)
 - [ ] FASE 4: Servicios secundarios
@@ -551,4 +554,4 @@ l10n_ar_afipws_fe/tests/
 ---
 
 **Última actualización**: 10 de enero de 2026  
-**Estado**: FASE 0 - Preparación completada, iniciando FASE 1
+**Estado**: FASE 1 - COMPLETADA ✅ | Iniciando FASE 2

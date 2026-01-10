@@ -5,11 +5,8 @@
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
-try:
-    from OpenSSL import crypto
-except ImportError:
-    crypto = None
 import logging
+from ..lib import crypto_utils
 
 _logger = logging.getLogger(__name__)
 
@@ -150,12 +147,10 @@ class AfipwsCertificateAlias(models.Model):
         return True
 
     def generate_key(self, key_length=2048):
-        """ """
-        # TODO reemplazar todo esto por las funciones nativas de pyafipws
+        """Generate RSA private key using cryptography library."""
         for rec in self:
-            k = crypto.PKey()
-            k.generate_key(crypto.TYPE_RSA, key_length)
-            rec.key = crypto.dump_privatekey(crypto.FILETYPE_PEM, k)
+            key_pem = crypto_utils.generate_rsa_key(key_length)
+            rec.key = key_pem.decode('utf-8') if isinstance(key_pem, bytes) else key_pem
 
     def action_to_draft(self):
         self.write({"state": "draft"})
@@ -167,29 +162,38 @@ class AfipwsCertificateAlias(models.Model):
         return True
 
     def action_create_certificate_request(self):
-        """
-        TODO agregar descripcion y ver si usamos pyafipsw para generar esto
-        """
+        """Create Certificate Signing Request (CSR) using cryptography library."""
         for record in self:
-            req = crypto.X509Req()
-            req.get_subject().C = self.country_id.code.encode("ascii", "ignore")
-            if self.state_id:
-                req.get_subject().ST = self.state_id.name.encode("ascii", "ignore")
-            req.get_subject().L = self.city.encode("ascii", "ignore")
-            req.get_subject().O = self.company_id.name.encode("ascii", "ignore")
-            req.get_subject().OU = self.department.encode("ascii", "ignore")
-            req.get_subject().CN = self.common_name.encode("ascii", "ignore")
-            req.get_subject().serialNumber = "CUIT %s" % self.cuit.encode("ascii", "ignore")
-            k = crypto.load_privatekey(crypto.FILETYPE_PEM, self.key)
-            self.key = crypto.dump_privatekey(crypto.FILETYPE_PEM, k)
-            req.set_pubkey(k)
-            req.sign(k, "sha256")
-            csr = crypto.dump_certificate_request(crypto.FILETYPE_PEM, req)
+            # Prepare subject data
+            country_code = record.country_id.code or 'AR'
+            state_name = record.state_id.name if record.state_id else ''
+            city = record.city or ''
+            company_name = record.company_id.name or ''
+            department = record.department or 'IT'
+            common_name = record.common_name or 'AFIP WS'
+            cuit = record.cuit or ''
+            
+            # Generate CSR using crypto_utils
+            csr_pem = crypto_utils.create_csr(
+                private_key_pem=record.key.encode('utf-8') if isinstance(record.key, str) else record.key,
+                country_code=country_code,
+                state_name=state_name,
+                city=city,
+                company_name=company_name,
+                department=department,
+                common_name=common_name,
+                cuit=cuit
+            )
+            
+            # Convert to string if needed
+            csr_str = csr_pem.decode('utf-8') if isinstance(csr_pem, bytes) else csr_pem
+            
+            # Create certificate record
             vals = {
-                "csr": csr,
+                "csr": csr_str,
                 "alias_id": record.id,
             }
-            self.certificate_ids.create(vals)
+            record.certificate_ids.create(vals)
         return True
 
     @api.constrains("common_name")
