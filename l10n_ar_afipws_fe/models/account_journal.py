@@ -79,9 +79,22 @@ class AccountJournal(models.Model):
                     env_label = "Producción" if environment_type == "production" else "Homologación"
                     cert_info_parts.append(f"Ambiente: {env_label}")
                     
-                    # Agregar fecha de vencimiento si existe
-                    if certificate.date_to:
-                        cert_info_parts.append(f"Vence: {certificate.date_to.strftime('%d/%m/%Y')}")
+                    # Intentar obtener fecha de vencimiento del certificado X.509
+                    try:
+                        cert_obj = certificate.get_certificate()
+                        if cert_obj and hasattr(cert_obj, 'not_valid_after_utc'):
+                            # cryptography >= 42.0.0
+                            expiry_date = cert_obj.not_valid_after_utc
+                        elif cert_obj and hasattr(cert_obj, 'not_valid_after'):
+                            # cryptography < 42.0.0
+                            expiry_date = cert_obj.not_valid_after
+                        else:
+                            expiry_date = None
+                        
+                        if expiry_date:
+                            cert_info_parts.append(f"Vence: {expiry_date.strftime('%d/%m/%Y')}")
+                    except Exception as e:
+                        _logger.debug(f"No se pudo obtener fecha de vencimiento: {e}")
                     
                     rec.afip_certificate_info = " | ".join(cert_info_parts)
                     _logger.debug(f"Certificate info computed: {rec.afip_certificate_info}")
