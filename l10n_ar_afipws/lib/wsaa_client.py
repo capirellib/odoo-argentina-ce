@@ -144,8 +144,21 @@ class WSAAClient:
             else:
                 cms_str = cms_signed
             
-            # Llamar al servicio LoginCms
-            response = self.client.service.loginCms(cms_str)
+            # AFIP espera solo el contenido base64, sin los headers PEM
+            # Extraer el contenido entre -----BEGIN PKCS7----- y -----END PKCS7-----
+            import re
+            match = re.search(r'-----BEGIN PKCS7-----\s*(.*?)\s*-----END PKCS7-----', 
+                            cms_str, re.DOTALL)
+            if match:
+                cms_base64 = match.group(1).strip()
+                _logger.debug(f"CMS extraído sin headers PEM: {len(cms_base64)} caracteres")
+            else:
+                # Si no tiene headers, asumir que ya es base64 puro
+                cms_base64 = cms_str.strip()
+                _logger.debug("CMS sin headers PEM detectado")
+            
+            # Llamar al servicio LoginCms con solo el base64
+            response = self.client.service.loginCms(cms_base64)
             
             _logger.info("Respuesta recibida de LoginCms")
             

@@ -55,6 +55,8 @@ class AccountJournal(models.Model):
             
             try:
                 environment_type = rec.company_id._get_environment_type()
+                _logger.debug(f"Computing certificate info for journal {rec.name}, environment: {environment_type}")
+                
                 certificate = self.env["afipws.certificate"].search([
                     ("alias_id.company_id", "=", rec.company_id.id),
                     ("alias_id.type", "=", environment_type),
@@ -82,11 +84,13 @@ class AccountJournal(models.Model):
                         cert_info_parts.append(f"Vence: {certificate.date_to.strftime('%d/%m/%Y')}")
                     
                     rec.afip_certificate_info = " | ".join(cert_info_parts)
+                    _logger.debug(f"Certificate info computed: {rec.afip_certificate_info}")
                 else:
-                    rec.afip_certificate_info = f"Sin certificado confirmado para {environment_type}"
+                    rec.afip_certificate_info = f"⚠ Sin certificado confirmado ({environment_type})"
+                    _logger.debug(f"No confirmed certificate found for {environment_type}")
             except Exception as e:
-                _logger.warning(f"Error computing certificate info: {e}")
-                rec.afip_certificate_info = False
+                _logger.warning(f"Error computing certificate info for journal {rec.name}: {e}")
+                rec.afip_certificate_info = f"Error: {str(e)}"
 
 
     def test_pyafipws_dummy(self):
