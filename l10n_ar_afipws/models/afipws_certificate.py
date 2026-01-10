@@ -114,21 +114,24 @@ class AfipwsCertificate(models.Model):
             else:
                 rec.request_file = False
 
-    @api.depends('crt')
+    @api.depends('crt', 'id', 'state')
     def _compute_cert_info(self):
         """Extraer información del certificado X.509"""
         from datetime import datetime, timezone
         import traceback
         
         for record in self:
+            # Inicializar todos los campos primero
+            record.cert_valid_from = False
+            record.cert_valid_to = False
+            record.cert_subject = False
+            record.cert_issuer = False
+            record.cert_serial_number = False
+            record.cert_is_expired = False
+            record.cert_days_to_expire = 0
+            
             if not record.crt:
-                record.cert_valid_from = False
-                record.cert_valid_to = False
-                record.cert_subject = False
-                record.cert_issuer = False
-                record.cert_serial_number = False
-                record.cert_is_expired = False
-                record.cert_days_to_expire = 0
+                _logger.debug(f"Certificado {record.id}: Sin contenido CRT")
                 continue
             
             try:
