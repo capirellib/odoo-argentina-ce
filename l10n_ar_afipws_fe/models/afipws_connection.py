@@ -43,21 +43,29 @@ class AfipwsConnection(models.Model):
             # El adaptador se inicializará en connect() con las credenciales
             ws = None  # Se creará en connect()
         elif afip_ws == "wsfex":
-            from pyafipws.wsfexv1 import WSFEXv1
-
-            ws = WSFEXv1()
+            try:
+                from pyafipws.wsfexv1 import WSFEXv1
+                ws = WSFEXv1()
+            except ImportError:
+                raise UserError(_("pyafipws not installed. WSFEXv1 not available yet in zeep migration."))
         elif afip_ws == "wsmtxca":
-            from pyafipws.wsmtx import WSMTXCA
-
-            ws = WSMTXCA()
+            try:
+                from pyafipws.wsmtx import WSMTXCA
+                ws = WSMTXCA()
+            except ImportError:
+                raise UserError(_("pyafipws not installed. WSMTXCA not available yet in zeep migration."))
         elif afip_ws == "wscdc":
-            from pyafipws.wscdc import WSCDC
-
-            ws = WSCDC()
+            try:
+                from pyafipws.wscdc import WSCDC
+                ws = WSCDC()
+            except ImportError:
+                raise UserError(_("pyafipws not installed. WSCDC not available yet in zeep migration."))
         elif afip_ws == "wsbfe":
-            from pyafipws.wsbfev1 import WSBFEv1
-
-            ws = WSBFEv1()
+            try:
+                from pyafipws.wsbfev1 import WSBFEv1
+                ws = WSBFEv1()
+            except ImportError:
+                raise UserError(_("pyafipws not installed. WSBFEv1 not available yet in zeep migration."))
         return ws
 
     @api.model
