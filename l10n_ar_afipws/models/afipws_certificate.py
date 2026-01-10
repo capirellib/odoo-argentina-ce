@@ -113,7 +113,11 @@ class AfipwsCertificate(models.Model):
         from datetime import datetime, timezone
         import traceback
         
+        _logger.info(f"=== _compute_cert_info called for {len(self)} certificate(s) ===")
+        
         for record in self:
+            _logger.info(f"Processing certificate ID: {record.id}, has_crt: {bool(record.crt)}")
+            
             # Inicializar todos los campos primero
             record.cert_valid_from = False
             record.cert_valid_to = False
@@ -124,7 +128,7 @@ class AfipwsCertificate(models.Model):
             record.cert_days_to_expire = 0
             
             if not record.crt:
-                _logger.debug(f"Certificado {record.id}: Sin contenido CRT")
+                _logger.warning(f"Certificado {record.id}: Sin contenido CRT")
                 continue
             
             try:
