@@ -48,6 +48,7 @@ lxml
 - [x] Analizar código actual y dependencias
 - [x] Documentar plan en `MIGRACION_ZEEP.md`
 - [x] Instalar dependencias: zeep, cryptography, lxml
+- [x] Habilitar módulo `l10n_ar_afipws` para instalación
 - [ ] Configurar ambiente de testing con certificados de homologación
 - [ ] Documentar URLs y WSDLs de cada servicio
 
