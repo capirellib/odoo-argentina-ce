@@ -118,6 +118,7 @@ class AfipwsCertificate(models.Model):
     def _compute_cert_info(self):
         """Extraer información del certificado X.509"""
         from datetime import datetime, timezone
+        import traceback
         
         for record in self:
             if not record.crt:
@@ -134,6 +135,7 @@ class AfipwsCertificate(models.Model):
                 cert = record.get_certificate()
                 
                 if not cert:
+                    _logger.warning(f"get_certificate() retornó None para certificado {record.id}")
                     record.cert_valid_from = False
                     record.cert_valid_to = False
                     record.cert_subject = False
@@ -143,6 +145,8 @@ class AfipwsCertificate(models.Model):
                     record.cert_days_to_expire = 0
                     continue
                 
+                _logger.info(f"Procesando certificado {record.id}, tipo: {type(cert)}")
+                
                 # Fechas de validez
                 try:
                     record.cert_valid_from = cert.not_valid_before_utc
@@ -151,8 +155,10 @@ class AfipwsCertificate(models.Model):
                     record.cert_is_expired = cert.not_valid_after_utc < now
                     days_diff = (cert.not_valid_after_utc - now).days
                     record.cert_days_to_expire = days_diff if days_diff > 0 else 0
-                except AttributeError:
+                    _logger.info(f"Fechas extraídas (UTC): {record.cert_valid_from} - {record.cert_valid_to}")
+                except AttributeError as ae:
                     # Versiones antiguas de cryptography
+                    _logger.info(f"Usando not_valid_before/after (sin _utc): {ae}")
                     record.cert_valid_from = cert.not_valid_before.replace(tzinfo=timezone.utc)
                     record.cert_valid_to = cert.not_valid_after.replace(tzinfo=timezone.utc)
                     now = datetime.now(timezone.utc)
@@ -175,8 +181,11 @@ class AfipwsCertificate(models.Model):
                 # Número de serie
                 record.cert_serial_number = str(cert.serial_number)
                 
+                _logger.info(f"Certificado {record.id} procesado OK: subject={record.cert_subject}, serial={record.cert_serial_number}")
+                
             except Exception as e:
-                _logger.warning(f"Error al extraer información del certificado: {e}")
+                _logger.error(f"Error al extraer información del certificado {record.id}: {e}")
+                _logger.error(traceback.format_exc())
                 record.cert_valid_from = False
                 record.cert_valid_to = False
                 record.cert_subject = False
