@@ -117,6 +117,57 @@ class AfipwsCertificateAlias(models.Model):
         default="production",
         readonly=True,
     )
+    
+    # Campos para alertas de certificados
+    has_expired_certificate = fields.Boolean(
+        string="Tiene certificado vencido",
+        compute="_compute_certificate_alerts",
+        store=False,
+    )
+    has_expiring_soon_certificate = fields.Boolean(
+        string="Tiene certificado por vencer",
+        compute="_compute_certificate_alerts",
+        store=False,
+    )
+    certificate_alert_message = fields.Char(
+        string="Mensaje de alerta",
+        compute="_compute_certificate_alerts",
+        store=False,
+    )
+
+    @api.depends('certificate_ids.cert_is_expired', 'certificate_ids.cert_days_to_expire', 'certificate_ids.state')
+    def _compute_certificate_alerts(self):
+        """Computar alertas de certificados vencidos o por vencer"""
+        for rec in self:
+            confirmed_certs = rec.certificate_ids.filtered(lambda c: c.state == 'confirmed')
+            
+            if not confirmed_certs:
+                rec.has_expired_certificate = False
+                rec.has_expiring_soon_certificate = False
+                rec.certificate_alert_message = False
+                continue
+            
+            # Verificar si hay certificados vencidos
+            expired = confirmed_certs.filtered(lambda c: c.cert_is_expired)
+            if expired:
+                rec.has_expired_certificate = True
+                rec.has_expiring_soon_certificate = False
+                rec.certificate_alert_message = "⚠ Tiene certificados vencidos. Debe renovarlos urgentemente."
+                continue
+            
+            # Verificar si hay certificados por vencer (menos de 30 días)
+            expiring_soon = confirmed_certs.filtered(lambda c: c.cert_days_to_expire > 0 and c.cert_days_to_expire < 30)
+            if expiring_soon:
+                min_days = min(expiring_soon.mapped('cert_days_to_expire'))
+                rec.has_expired_certificate = False
+                rec.has_expiring_soon_certificate = True
+                rec.certificate_alert_message = f"⚠ Tiene certificados que vencen en {min_days} días. Planifique su renovación."
+                continue
+            
+            # Sin alertas
+            rec.has_expired_certificate = False
+            rec.has_expiring_soon_certificate = False
+            rec.certificate_alert_message = False
 
     @api.onchange("company_id")
     def change_company_name(self):
