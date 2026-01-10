@@ -114,7 +114,7 @@ class AfipwsCertificate(models.Model):
             else:
                 rec.request_file = False
 
-    @api.depends('crt', 'id', 'state')
+    @api.depends('crt', 'state')
     def _compute_cert_info(self):
         """Extraer información del certificado X.509"""
         from datetime import datetime, timezone
