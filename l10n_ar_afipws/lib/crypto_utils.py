@@ -110,14 +110,19 @@ def create_csr(
     return pem
 
 
-def load_private_key(pem_data: str) -> rsa.RSAPrivateKey:
+def load_private_key(pem_data: str, password: bytes = None) -> rsa.RSAPrivateKey:
     """
     Carga una clave privada desde formato PEM.
     
-    Soporta tanto "BEGIN RSA PRIVATE KEY" como "BEGIN PRIVATE KEY".
+    Soporta múltiples formatos:
+    - PKCS#8 (BEGIN PRIVATE KEY)
+    - PKCS#1 (BEGIN RSA PRIVATE KEY)
+    - Claves cifradas con contraseña
+    - Formato tradicional de OpenSSL
     
     Args:
         pem_data: Clave en formato PEM (str o bytes)
+        password: Contraseña si la clave está cifrada (opcional)
         
     Returns:
         Objeto RSAPrivateKey
@@ -125,17 +130,68 @@ def load_private_key(pem_data: str) -> rsa.RSAPrivateKey:
     if isinstance(pem_data, str):
         pem_data = pem_data.encode('utf-8')
     
-    # Intentar cargar como PKCS#8 (BEGIN PRIVATE KEY)
+    errors = []
+    
+    # Intentar sin contraseña primero
     try:
         private_key = serialization.load_pem_private_key(
             pem_data,
-            password=None,
+            password=password,
             backend=default_backend()
         )
+        _logger.info("Clave privada cargada exitosamente")
         return private_key
     except Exception as e:
-        _logger.error(f"Error al cargar clave privada: {e}")
-        raise ValueError(f"No se pudo cargar la clave privada: {e}")
+        errors.append(f"PKCS#8/PKCS#1 sin contraseña: {e}")
+    
+    # Si falla, intentar convertir de formato legacy OpenSSL a PKCS#8
+    try:
+        # Intentar cargar y reconvertir
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+        import subprocess
+        import tempfile
+        
+        # Crear archivos temporales
+        with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.pem') as tmp_in:
+            tmp_in.write(pem_data)
+            tmp_in_path = tmp_in.name
+        
+        with tempfile.NamedTemporaryFile(mode='rb', delete=False, suffix='.pem') as tmp_out:
+            tmp_out_path = tmp_out.name
+        
+        try:
+            # Intentar convertir con openssl
+            result = subprocess.run(
+                ['openssl', 'rsa', '-in', tmp_in_path, '-out', tmp_out_path],
+                capture_output=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0:
+                with open(tmp_out_path, 'rb') as f:
+                    converted_pem = f.read()
+                
+                private_key = serialization.load_pem_private_key(
+                    converted_pem,
+                    password=None,
+                    backend=default_backend()
+                )
+                _logger.info("Clave privada convertida desde formato OpenSSL legacy")
+                return private_key
+        finally:
+            import os
+            try:
+                os.unlink(tmp_in_path)
+                os.unlink(tmp_out_path)
+            except:
+                pass
+    except Exception as e:
+        errors.append(f"Conversión OpenSSL: {e}")
+    
+    # Si todo falla, reportar error detallado
+    error_msg = "No se pudo cargar la clave privada. Intentos:\n" + "\n".join(errors)
+    _logger.error(error_msg)
+    raise ValueError(error_msg)
 
 
 def load_certificate(pem_data: str) -> x509.Certificate:
