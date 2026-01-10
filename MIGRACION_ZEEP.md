@@ -150,6 +150,93 @@ class WSAAClient:
 
 ---
 
+### 📄 FASE 3: WSFEv1 con zeep [EN PROGRESO]
+
+**Objetivo**: Reimplementar facturación electrónica WSFEv1 usando zeep
+
+#### Archivos creados:
+- ✅ `l10n_ar_afipws_fe/lib/__init__.py`
+- ✅ `l10n_ar_afipws_fe/lib/wsfev1_client.py`
+
+#### Clase implementada:
+
+```python
+class WSFEv1Client:
+    """Cliente WSFEv1 con zeep"""
+    
+    WSDL_PROD = "https://servicios1.afip.gov.ar/wsfev1/service.asmx?WSDL"
+    WSDL_HOMO = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL"
+```
+
+#### Métodos implementados:
+- ✅ `dummy()` - Test de conectividad
+- ✅ `solicitar_cae()` - Solicita CAE (FECAESolicitar)
+- ✅ `consultar_ultimo_comprobante()` - Último número autorizado
+- ✅ `get_tipos_comprobantes()` - Tipos de comprobante
+- ✅ `get_tipos_documento()` - Tipos de documento
+- ✅ `get_tipos_iva()` - Alícuotas IVA
+- ✅ `get_tipos_moneda()` - Monedas
+- ✅ `get_tipos_tributo()` - Tipos de tributo
+- ✅ `get_cotizacion()` - Cotización de moneda
+- ✅ `get_puntos_venta()` - Puntos de venta autorizados
+
+#### Tests creados:
+- ✅ `l10n_ar_afipws_fe/tests/__init__.py`
+- ✅ `l10n_ar_afipws_fe/tests/test_wsfev1_standalone.py`
+
+#### Archivos a modificar (próximo):
+- [ ] `l10n_ar_afipws_fe/models/account_move_ws.py` - Reemplazar pyafipws.wsfev1
+- [ ] `l10n_ar_afipws_fe/models/account_move.py` - Adaptar lógica de facturación
+- [ ] `l10n_ar_afipws_fe/models/account_journal.py` - Configuración de journals
+- [ ] `l10n_ar_afipws_fe/afip_utils.py` - Funciones auxiliares
+
+#### Funcionalidades de WSFEv1:
+- **FECAESolicitar**: Solicitar CAE (Código de Autorización Electrónico)
+  - Facturas A, B, C, M
+  - Notas de crédito/débito
+  - FCE (MiPyMEs)
+  - Alícuotas IVA múltiples
+  - Tributos (percepciones, retenciones)
+  - Comprobantes asociados
+  
+- **Consultas de parámetros**:
+  - Tipos de comprobante
+  - Tipos de documento
+  - Tipos de IVA
+  - Monedas y cotizaciones
+  - Tributos
+  - Puntos de venta
+
+#### Criterios de aceptación:
+- [x] Cliente WSFEv1 conecta a AFIP correctamente
+- [x] Dummy() funciona (test conectividad)
+- [x] Consultar último comprobante autorizado
+- [x] Obtener parámetros (tipos cbte, IVA, monedas, etc.)
+- [ ] Solicitar CAE para Factura C (consumidor final)
+- [ ] Solicitar CAE para Factura B (monotributista)
+- [ ] Solicitar CAE para Factura A (responsable inscripto)
+- [ ] Manejar comprobantes con IVA múltiple
+- [ ] Manejar tributos (percepciones/retenciones)
+- [ ] Integrar con account.move de Odoo
+- [ ] Tests de Odoo pasan al 100%
+- [ ] Probar flujo completo: draft → validate → obtener CAE
+
+**ESTADO**: 🔧 Cliente WSFEv1 implementado (falta integración con modelos Odoo)
+
+**COMPLETADO**:
+- ✅ Cliente WSFEv1 con zeep
+- ✅ Test standalone exitoso
+- ✅ Adaptador de compatibilidad WSFEv1Adapter
+- ✅ Integración con afipws_connection.py
+- ✅ Método connect() override para WSFEv1
+
+**PRÓXIMO**:
+- [ ] Probar flujo completo en Odoo
+- [ ] Validar factura A/B/C
+- [ ] Manejar errores y observaciones
+
+---
+
 ### 📄 FASE 3: WSFEv1 con zeep [PENDIENTE]
 
 **Objetivo**: Migrar facturación electrónica mercado interno
