@@ -122,22 +122,22 @@ class AfipwsCertificateAlias(models.Model):
     has_expired_certificate = fields.Boolean(
         string="Tiene certificado vencido",
         compute="_compute_certificate_alerts",
-        store=False,
     )
     has_expiring_soon_certificate = fields.Boolean(
         string="Tiene certificado por vencer",
         compute="_compute_certificate_alerts",
-        store=False,
     )
     certificate_alert_message = fields.Char(
         string="Mensaje de alerta",
         compute="_compute_certificate_alerts",
-        store=False,
     )
 
-    @api.depends('certificate_ids.cert_is_expired', 'certificate_ids.cert_days_to_expire', 'certificate_ids.state')
+    @api.depends('certificate_ids', 'certificate_ids.state', 'certificate_ids.crt')
     def _compute_certificate_alerts(self):
         """Computar alertas de certificados vencidos o por vencer"""
+        import logging
+        _logger = logging.getLogger(__name__)
+        
         for rec in self:
             confirmed_certs = rec.certificate_ids.filtered(lambda c: c.state == 'confirmed')
             
@@ -145,7 +145,10 @@ class AfipwsCertificateAlias(models.Model):
                 rec.has_expired_certificate = False
                 rec.has_expiring_soon_certificate = False
                 rec.certificate_alert_message = False
+                _logger.debug(f"Alias {rec.id}: Sin certificados confirmados")
                 continue
+            
+            _logger.debug(f"Alias {rec.id}: {len(confirmed_certs)} certificados confirmados")
             
             # Verificar si hay certificados vencidos
             expired = confirmed_certs.filtered(lambda c: c.cert_is_expired)
@@ -153,6 +156,7 @@ class AfipwsCertificateAlias(models.Model):
                 rec.has_expired_certificate = True
                 rec.has_expiring_soon_certificate = False
                 rec.certificate_alert_message = "⚠ Tiene certificados vencidos. Debe renovarlos urgentemente."
+                _logger.info(f"Alias {rec.id}: {len(expired)} certificados vencidos")
                 continue
             
             # Verificar si hay certificados por vencer (menos de 30 días)
@@ -162,12 +166,14 @@ class AfipwsCertificateAlias(models.Model):
                 rec.has_expired_certificate = False
                 rec.has_expiring_soon_certificate = True
                 rec.certificate_alert_message = f"⚠ Tiene certificados que vencen en {min_days} días. Planifique su renovación."
+                _logger.info(f"Alias {rec.id}: {len(expiring_soon)} certificados por vencer")
                 continue
             
             # Sin alertas
             rec.has_expired_certificate = False
             rec.has_expiring_soon_certificate = False
             rec.certificate_alert_message = False
+            _logger.debug(f"Alias {rec.id}: Sin alertas, todos los certificados OK")
 
     @api.onchange("company_id")
     def change_company_name(self):
