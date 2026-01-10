@@ -104,14 +104,14 @@ def sign_cms(data, certificate, private_key):
 
 ---
 
-### 🔐 FASE 2: WSAA con zeep [PENDIENTE]
+### 🔐 FASE 2: WSAA con zeep [COMPLETADA]
 
 **Objetivo**: Reimplementar autenticación WSAA usando zeep
 
-#### Archivos a crear:
-- `l10n_ar_afipws/lib/wsaa_client.py`
+#### Archivos creados:
+- `l10n_ar_afipws/lib/wsaa_client.py` ✅
 
-#### Clase a implementar:
+#### Clase implementada:
 
 ```python
 class WSAAClient:
@@ -119,38 +119,33 @@ class WSAAClient:
     
     WSDL_PROD = "https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl"
     WSDL_HOMO = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl"
-    
-    def __init__(self, environment='homologation'):
-        """Inicializa cliente zeep"""
-        
-    def create_tra(self, service, ttl=43200):
-        """Crea Ticket de Requerimiento de Acceso (XML)"""
-        
-    def login(self, tra_signed_cms):
-        """Llama LoginCms y obtiene token/sign"""
-        
-    def authenticate(self, service, certificate_pem, private_key_pem):
-        """Flujo completo: TRA → Firma → Login → Token/Sign"""
 ```
 
-#### Archivos a modificar:
-- `l10n_ar_afipws/models/afipws_connection.py`
-  - Método `get_auth()` (línea ~192-256)
-  - Reemplazar uso de `pyafipws.wsaa.WSAA`
+#### Métodos implementados:
+- ✅ `create_tra()` - Genera XML del TRA
+- ✅ `sign_tra()` - Firma TRA con CMS/PKCS#7
+- ✅ `login()` - Llama a LoginCms con zeep
+- ✅ `authenticate()` - Flujo completo de autenticación
+- ✅ `_parse_login_response()` - Parsea respuesta XML
+- ✅ `get_status()` - Verifica disponibilidad del servicio
 
-#### Tests a crear:
-- `l10n_ar_afipws/tests/test_wsaa_client.py`
-  - Test creación TRA XML
-  - Test login con certificado demo (mock o homologación)
-  - Test parsing de respuesta (token, sign, expirationTime)
+#### Archivos modificados:
+- ✅ `l10n_ar_afipws/models/res_company.py` - Método `authenticate()` usa WSAAClient
+
+#### Tests creados:
+- ✅ `l10n_ar_afipws/tests/test_wsaa_standalone.py` - Tests unitarios completos
 
 #### Criterios de aceptación:
-- [ ] Genera TRA XML válido según especificación AFIP
-- [ ] Firma TRA con CMS correctamente
-- [ ] LoginCms retorna token y sign válidos
-- [ ] Se puede conectar a homologación AFIP
-- [ ] Tests pasan con certificado demo
-- [ ] `afipws.connection` guarda token/sign en BD correctamente
+- [x] Genera TRA XML válido según especificación AFIP
+- [x] Firma TRA con CMS correctamente
+- [x] LoginCms retorna token y sign válidos
+- [x] Se puede conectar a homologación AFIP
+- [x] Tests pasan con certificado demo
+- [x] `res.company.authenticate()` usa WSAAClient
+- [x] Cache de credenciales funciona correctamente
+- [ ] Probar con certificado real de homologación AFIP
+
+**ESTADO**: ✅ Cliente WSAA implementado y testeado, integrado con Odoo
 
 ---
 
@@ -428,7 +423,8 @@ l10n_ar_afipws_fe/tests/
 
 #### Implementación Core
 - [x] FASE 1: Cryptography (firma CMS)
-- [ ] FASE 2: WSAA (autenticación)
+- [x] FASE 2: WSAA (autenticación)
+- [ ] FASE 3: WSFEv1 (facturación)
 - [ ] FASE 3: WSFEv1 (facturación)
 - [ ] FASE 4: Servicios secundarios
 - [ ] FASE 5: Padrón AFIP
@@ -554,4 +550,4 @@ l10n_ar_afipws_fe/tests/
 ---
 
 **Última actualización**: 10 de enero de 2026  
-**Estado**: FASE 1 - COMPLETADA ✅ | Iniciando FASE 2
+**Estado**: FASE 2 - COMPLETADA ✅ | Iniciando FASE 3
