@@ -60,6 +60,50 @@ class AfipwsCertificate(models.Model):
         readonly=True,
         compute="_compute_request_file",
     )
+    
+    # Campos informativos del certificado
+    cert_valid_from = fields.Datetime(
+        string="Válido desde",
+        compute="_compute_cert_info",
+        store=False,
+        help="Fecha desde la cual el certificado es válido"
+    )
+    cert_valid_to = fields.Datetime(
+        string="Válido hasta",
+        compute="_compute_cert_info",
+        store=False,
+        help="Fecha de vencimiento del certificado"
+    )
+    cert_subject = fields.Char(
+        string="Subject (DN)",
+        compute="_compute_cert_info",
+        store=False,
+        help="Distinguished Name del sujeto del certificado"
+    )
+    cert_issuer = fields.Char(
+        string="Emisor",
+        compute="_compute_cert_info",
+        store=False,
+        help="Entidad que emitió el certificado"
+    )
+    cert_serial_number = fields.Char(
+        string="Número de Serie",
+        compute="_compute_cert_info",
+        store=False,
+        help="Número de serie del certificado"
+    )
+    cert_is_expired = fields.Boolean(
+        string="Certificado Vencido",
+        compute="_compute_cert_info",
+        store=False,
+        help="Indica si el certificado está vencido"
+    )
+    cert_days_to_expire = fields.Integer(
+        string="Días para vencer",
+        compute="_compute_cert_info",
+        store=False,
+        help="Cantidad de días hasta que expire el certificado"
+    )
 
     @api.depends("csr")
     def _compute_request_file(self):
@@ -69,6 +113,77 @@ class AfipwsCertificate(models.Model):
                 rec.request_file = base64.encodebytes(self.csr.encode("utf-8"))
             else:
                 rec.request_file = False
+
+    @api.depends('crt')
+    def _compute_cert_info(self):
+        """Extraer información del certificado X.509"""
+        from datetime import datetime, timezone
+        
+        for record in self:
+            if not record.crt:
+                record.cert_valid_from = False
+                record.cert_valid_to = False
+                record.cert_subject = False
+                record.cert_issuer = False
+                record.cert_serial_number = False
+                record.cert_is_expired = False
+                record.cert_days_to_expire = 0
+                continue
+            
+            try:
+                cert = record.get_certificate()
+                
+                if not cert:
+                    record.cert_valid_from = False
+                    record.cert_valid_to = False
+                    record.cert_subject = False
+                    record.cert_issuer = False
+                    record.cert_serial_number = False
+                    record.cert_is_expired = False
+                    record.cert_days_to_expire = 0
+                    continue
+                
+                # Fechas de validez
+                try:
+                    record.cert_valid_from = cert.not_valid_before_utc
+                    record.cert_valid_to = cert.not_valid_after_utc
+                    now = datetime.now(timezone.utc)
+                    record.cert_is_expired = cert.not_valid_after_utc < now
+                    days_diff = (cert.not_valid_after_utc - now).days
+                    record.cert_days_to_expire = days_diff if days_diff > 0 else 0
+                except AttributeError:
+                    # Versiones antiguas de cryptography
+                    record.cert_valid_from = cert.not_valid_before.replace(tzinfo=timezone.utc)
+                    record.cert_valid_to = cert.not_valid_after.replace(tzinfo=timezone.utc)
+                    now = datetime.now(timezone.utc)
+                    record.cert_is_expired = cert.not_valid_after.replace(tzinfo=timezone.utc) < now
+                    days_diff = (cert.not_valid_after.replace(tzinfo=timezone.utc) - now).days
+                    record.cert_days_to_expire = days_diff if days_diff > 0 else 0
+                
+                # Subject (DN)
+                subject_parts = []
+                for attr in cert.subject:
+                    subject_parts.append(f"{attr.oid._name}={attr.value}")
+                record.cert_subject = ", ".join(subject_parts)
+                
+                # Issuer
+                issuer_parts = []
+                for attr in cert.issuer:
+                    issuer_parts.append(f"{attr.oid._name}={attr.value}")
+                record.cert_issuer = ", ".join(issuer_parts)
+                
+                # Número de serie
+                record.cert_serial_number = str(cert.serial_number)
+                
+            except Exception as e:
+                _logger.warning(f"Error al extraer información del certificado: {e}")
+                record.cert_valid_from = False
+                record.cert_valid_to = False
+                record.cert_subject = False
+                record.cert_issuer = False
+                record.cert_serial_number = False
+                record.cert_is_expired = False
+                record.cert_days_to_expire = 0
 
     def action_to_draft(self):
         if self.alias_id.state != "confirmed":
