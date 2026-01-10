@@ -28,33 +28,57 @@ class L10nArAfipwsUploadCertificate(models.TransientModel):
         """Upload and confirm certificate."""
         self.ensure_one()
         
-        # Decodificar el archivo del certificado
+        from odoo.exceptions import UserError
+        
         try:
-            # En Odoo, certificate_file es un campo Binary que puede venir como:
-            # - bytes (directo)
-            # - str en base64
+            # En Odoo, certificate_file es un campo Binary
+            # Los datos pueden venir en diferentes formatos según cómo se suba el archivo
             cert_data = self.certificate_file
             
-            if isinstance(cert_data, str):
-                # Si es string, decodificar de base64
-                cert_pem = base64.decodebytes(cert_data.encode('utf-8'))
-            else:
-                # Si ya son bytes, decodificar de base64
-                cert_pem = base64.decodebytes(cert_data)
+            if not cert_data:
+                raise UserError("No se ha cargado ningún certificado")
             
-            # Convertir a string para almacenar en campo Text
-            if isinstance(cert_pem, bytes):
-                cert_pem = cert_pem.decode('utf-8')
+            # Si es bytes, intentar decodificar directamente como UTF-8
+            # (esto pasa cuando subes un archivo .pem directamente)
+            if isinstance(cert_data, bytes):
+                try:
+                    cert_pem = cert_data.decode('utf-8')
+                except UnicodeDecodeError:
+                    # Si no es UTF-8, puede estar en base64
+                    cert_pem = base64.b64decode(cert_data).decode('utf-8')
+            
+            # Si es string, puede ser:
+            # 1. Ya el contenido PEM directo
+            # 2. Base64 encoded
+            elif isinstance(cert_data, str):
+                # Verificar si ya es PEM
+                if '-----BEGIN CERTIFICATE-----' in cert_data:
+                    cert_pem = cert_data
+                else:
+                    # Intentar decodificar de base64
+                    try:
+                        cert_pem = base64.b64decode(cert_data).decode('utf-8')
+                    except Exception:
+                        raise UserError("El archivo no está en un formato válido (ni PEM ni base64)")
+            else:
+                raise UserError(f"Tipo de datos inesperado: {type(cert_data)}")
             
             # Validar que sea un certificado PEM válido
-            if not cert_pem.strip().startswith('-----BEGIN CERTIFICATE-----'):
-                raise ValueError("El archivo no parece ser un certificado PEM válido")
+            cert_pem = cert_pem.strip()
+            if not cert_pem.startswith('-----BEGIN CERTIFICATE-----'):
+                raise UserError("El archivo no parece ser un certificado PEM válido. "
+                              "Debe comenzar con '-----BEGIN CERTIFICATE-----'")
+            
+            if not cert_pem.endswith('-----END CERTIFICATE-----'):
+                raise UserError("El archivo no parece ser un certificado PEM válido. "
+                              "Debe terminar con '-----END CERTIFICATE-----'")
             
             self.certificate_id.write({"crt": cert_pem})
             self.certificate_id.action_confirm()
             
+        except UserError:
+            raise
         except Exception as e:
-            from odoo.exceptions import UserError
-            raise UserError(f"Error al procesar el certificado: {e}")
+            raise UserError(f"Error al procesar el certificado: {str(e)}")
         
         return True
