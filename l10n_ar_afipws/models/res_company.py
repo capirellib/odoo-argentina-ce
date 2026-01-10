@@ -157,9 +157,8 @@ class ResCompany(models.Model):
         )
         login_url = self.env["afipws.connection"].get_afip_login_url(environment_type)
         pkey, cert = self.get_key_and_certificate(environment_type)
-        # because pyafipws wsaa loos for "BEGIN RSA PRIVATE KEY" we change key
-        if pkey.startswith("-----BEGIN PRIVATE KEY-----"):
-            pkey = pkey.replace(" PRIVATE KEY", " RSA PRIVATE KEY")
+        # Ya no necesitamos reemplazar el formato de la clave porque crypto_utils
+        # soporta tanto PKCS#8 (BEGIN PRIVATE KEY) como PKCS#1 (BEGIN RSA PRIVATE KEY)
         auth_data = self.authenticate(afip_ws, cert, pkey, wsdl=login_url)
         auth_data.update(
             {

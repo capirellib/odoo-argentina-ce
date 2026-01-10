@@ -25,8 +25,36 @@ class L10nArAfipwsUploadCertificate(models.TransientModel):
     certificate_file = fields.Binary("Upload Certificate", required=True)
 
     def action_confirm(self):
-        """ """
+        """Upload and confirm certificate."""
         self.ensure_one()
-        self.certificate_id.write({"crt": base64.decodebytes(self.certificate_file)})
-        self.certificate_id.action_confirm()
+        
+        # Decodificar el archivo del certificado
+        try:
+            # En Odoo, certificate_file es un campo Binary que puede venir como:
+            # - bytes (directo)
+            # - str en base64
+            cert_data = self.certificate_file
+            
+            if isinstance(cert_data, str):
+                # Si es string, decodificar de base64
+                cert_pem = base64.decodebytes(cert_data.encode('utf-8'))
+            else:
+                # Si ya son bytes, decodificar de base64
+                cert_pem = base64.decodebytes(cert_data)
+            
+            # Convertir a string para almacenar en campo Text
+            if isinstance(cert_pem, bytes):
+                cert_pem = cert_pem.decode('utf-8')
+            
+            # Validar que sea un certificado PEM válido
+            if not cert_pem.strip().startswith('-----BEGIN CERTIFICATE-----'):
+                raise ValueError("El archivo no parece ser un certificado PEM válido")
+            
+            self.certificate_id.write({"crt": cert_pem})
+            self.certificate_id.action_confirm()
+            
+        except Exception as e:
+            from odoo.exceptions import UserError
+            raise UserError(f"Error al procesar el certificado: {e}")
+        
         return True
