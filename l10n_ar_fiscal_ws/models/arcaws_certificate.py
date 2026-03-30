@@ -98,7 +98,7 @@ class ArcawsCertificate(models.Model):
             msg = False
 
             if not crt:
-                msg = _("Invalid action! Please, set the certification string to " "continue.")
+                msg = _("Invalid action! Please, set the certification string to continue.")
             certificate = rec.get_certificate()
             if certificate is None:
                 msg = _(

@@ -55,6 +55,7 @@ class ArcaWs(models.Model):
         if method_id:
             raise ArcaError(method_id.call_arca_method(self, company_id=company))
 
+    @api.depends("method_ids.name")
     def _compute_dummy_method(self):
         has_dummy = self.filtered(lambda x: x.method_ids.filtered(lambda x: x.name == "dummy"))
         has_dummy.dummy_method = True
@@ -90,7 +91,7 @@ class ArcaWsMethod(models.Model):
             "datetime": safe_eval.datetime,
             "dateutil": safe_eval.dateutil,
             "relativedelta": safe_eval.dateutil.relativedelta.relativedelta,
-            "extra_values": kwargs.get("extra_values"),
+            "extra_values": kwargs.get("extra_values") or {},
             "time": safe_eval.time,
         }
         method_dict = safe_eval.safe_eval(self.definition_dict, eval_context, mode=mode)

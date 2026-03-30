@@ -1,8 +1,10 @@
+"""Manifest Odoo v19 - l10n_ar_fiscal_ws"""
+
 {
     "name": "Modulo Base para los Web Services de ARCA",
-    "version": "19.0.1.0.3",
+    "version": "19.0.1.0.6",
     "category": "Localization/Argentina",
-    "author": "ADHOC SA, Moldeo Interactive,Odoo Community Association (OCA)",
+    "author": "ADHOC SA",
     "license": "AGPL-3",
     "summary": "",
     "depends": [

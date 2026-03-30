@@ -13,7 +13,6 @@ class ResPartnerUpdateFromPadronField(models.TransientModel):
 
     wizard_id = fields.Many2one(
         "res.partner.update.from.padron.wizard",
-        "Wizard",
     )
     field = fields.Char("Field Name", help="Technical field name")
     field_label = fields.Char(compute="_compute_field_label", store=False)
@@ -89,7 +88,11 @@ class ResPartnerUpdateFromPadronWizard(models.TransientModel):
 
     @api.model
     def _get_default_title_case(self):
-        parameter = self.env["ir.config_parameter"].sudo().get_param("use_title_case_on_padron_afip")
+        parameter = (
+            self.env["ir.config_parameter"]
+            .sudo()  # OCA: Justificado. Requerido para acceso a parámetros globales multi-compañía.
+            .get_param("use_title_case_on_padron_afip")
+        )
         if parameter == "False" or parameter == "0":
             return False
         return True
@@ -119,7 +122,6 @@ class ResPartnerUpdateFromPadronWizard(models.TransientModel):
     )
     partner_id = fields.Many2one(
         "res.partner",
-        string="Partner",
         readonly=True,
     )
     update_constancia = fields.Boolean(
@@ -190,45 +192,87 @@ class ResPartnerUpdateFromPadronWizard(models.TransientModel):
             selected_field_names = set(self.field_to_update_ids.mapped("name"))
 
             for key, new_value in partner_vals.items():
+                # --- OCA: Solo mostrar y actualizar campos seleccionados por el usuario y definidos en el modelo ---
                 if key in excluded_fields:
                     continue
-
-                # Si hay campos seleccionados, solo mostrar esos
                 if selected_field_names and key not in selected_field_names:
                     continue
+                if not hasattr(partner, key) or key not in partner._fields:
+                    continue
+
+                field_def = partner._fields[key]
 
                 # Obtener valor actual del partner
                 try:
-                    if hasattr(partner, key) and key in partner._fields:
-                        old_value = partner[key]
-                    else:
-                        old_value = None
+                    old_value = partner[key]
                 except Exception:
                     old_value = None
 
                 # Aplicar title case si corresponde
                 if self.title_case and key in ("name", "city", "street") and new_value:
-                    new_value = new_value.title()
+                    if isinstance(new_value, str):
+                        new_value = new_value.title()
+
+                # --- COMPARACIÓN INTELIGENTE (OCA/Rendimiento) ---
+                # Evitar mostrar cambios si el valor es el mismo
+                is_changed = False
+                if field_def.type == "many2one":
+                    # Comparar IDs
+                    old_id = old_value.id if old_value else None
+                    try:
+                        new_id = int(new_value) if new_value else None
+                    except (ValueError, TypeError):
+                        new_id = None
+                    is_changed = old_id != new_id
+                elif field_def.type in ("many2many", "one2many"):
+                    # Comparar sets de IDs
+                    old_ids = set(old_value.ids) if old_value else set()
+                    try:
+                        new_ids = set(literal_eval(new_value)) if new_value else set()
+                    except Exception:
+                        new_ids = set()
+                    is_changed = old_ids != new_ids
+                elif field_def.type == "boolean":
+                    # Normalizar booleanos (S/N -> True/False)
+                    norm_new = True if str(new_value).upper() in ("S", "AC", "1", "TRUE") else False
+                    is_changed = bool(old_value) != norm_new
+                else:
+                    # Comparación genérica (como strings para visualización)
+                    is_changed = str(old_value or "") != str(new_value or "")
+
+                if not is_changed:
+                    continue
 
                 # Formatear valores para mostrar
-                if key in ("state_id", "l10n_ar_afip_responsibility_type_id"):
-                    old_value_display = old_value.name if old_value else ""
+                # OCA: Manejo explícito de valores falsy (0, False)
+                def format_display(val, ftype):
+                    if val is False:
+                        return "False"
+                    if val is None:
+                        return ""
+                    if ftype == "many2one":
+                        return val.display_name if val else ""
+                    return str(val)
+
+                if field_def.type == "many2one":
+                    old_value_display = format_display(old_value, "many2one")
                     if new_value:
                         try:
-                            new_record = self.env[partner._fields[key].comodel_name].browse(int(new_value))
-                            new_value_display = new_record.name if new_record.exists() else str(new_value)
+                            comodel = field_def.comodel_name
+                            new_record = self.env[comodel].browse(int(new_value))
+                            new_value_display = new_record.display_name if new_record.exists() else str(new_value)
                         except (ValueError, TypeError):
                             new_value_display = str(new_value)
                     else:
                         new_value_display = ""
-                elif key in ("impuestos_padron", "actividades_padron"):
+                elif field_def.type in ("many2many", "one2many"):
                     old_value_display = str(old_value.ids) if old_value else "[]"
                     new_value_display = str(new_value) if new_value else "[]"
                 else:
-                    old_value_display = str(old_value) if old_value else ""
-                    new_value_display = str(new_value) if new_value else ""
+                    old_value_display = format_display(old_value, field_def.type)
+                    new_value_display = format_display(new_value, field_def.type)
 
-                # Agregar TODOS los campos devueltos por ARCA
+                # Agregar línea al wizard
                 line_vals = {
                     "wizard_id": self.id,
                     "field": key,
@@ -255,46 +299,47 @@ class ResPartnerUpdateFromPadronWizard(models.TransientModel):
         vals = {}
 
         for field_line in self.field_ids:
-            field_name = field_line.field
-            new_val = field_line.new_value
+            # Obtener definición de campo en res.partner para casting de tipos
+            partner_field = self.partner_id._fields.get(field_name)
+            if not partner_field:
+                _logger.warning("Campo '%s' no existe en res.partner, se omite", field_name)
+                continue
 
-            # Aplicar title case si está activado
-            if self.title_case and field_name in ("name", "city", "street") and new_val:
-                new_val = new_val.title()
+            ftype = partner_field.type
+            real_val = field_line.real_value
 
-            # Manejar campos relacionales
-            if field_name in ("impuestos_padron", "actividades_padron"):
-                if field_line.real_value:
+            # Aplicar casting de tipos y manejar relacionales
+            if ftype in ("many2many", "one2many"):
+                if real_val:
                     try:
-                        ids_list = literal_eval(field_line.real_value)
+                        ids_list = literal_eval(real_val)
                         vals[field_name] = [(6, 0, ids_list)]
                     except Exception:
                         vals[field_name] = [(6, 0, [])]
-            elif field_name in ("state_id", "country_id", "l10n_ar_afip_responsibility_type_id"):
-                # Para Many2one, usar real_value (debería ser ID numérico)
-                value_to_write = field_line.real_value if field_line.real_value else new_val
-                if value_to_write:
+            elif ftype == "many2one":
+                if real_val:
                     try:
-                        vals[field_name] = int(value_to_write)
+                        vals[field_name] = int(real_val)
                     except (ValueError, TypeError):
-                        # Si no es un ID numérico, buscar el registro por nombre
-                        comodel = self.env["res.partner"]._fields[field_name].comodel_name
-                        record = self.env[comodel].search(
-                            [("name", "ilike", value_to_write)],
-                            limit=1,
-                        )
+                        # Fallback por nombre
+                        comodel = partner_field.comodel_name
+                        record = self.env[comodel].search([("display_name", "ilike", real_val)], limit=1)
                         vals[field_name] = record.id if record else False
-                        if not record:
-                            _logger.warning(
-                                "No se encontró registro %s con nombre '%s' para campo %s",
-                                comodel,
-                                value_to_write,
-                                field_name,
-                            )
                 else:
                     vals[field_name] = False
+            elif ftype == "boolean":
+                # Normalizar booleanos (S, AC, True, TRUE -> True)
+                vals[field_name] = str(real_val).upper() in ("S", "AC", "1", "TRUE") if real_val else False
+            elif ftype in ("integer",):
+                vals[field_name] = int(real_val) if real_val else 0
+            elif ftype in ("float", "monetary"):
+                vals[field_name] = float(real_val) if real_val else 0.0
             else:
-                vals[field_name] = new_val
+                # Char, Text, Selection
+                final_val = real_val if real_val is not None else new_val
+                if self.title_case and field_name in ("name", "city", "street") and final_val:
+                    final_val = final_val.title()
+                vals[field_name] = final_val
 
         if vals:
             # Filtrar campos que no existen en res.partner para evitar KeyError
@@ -319,10 +364,13 @@ class ResPartnerUpdateFromPadronWizard(models.TransientModel):
             return {"type": "ir.actions.act_window_close"}
 
     def automatic_process_cb(self):
-        for partner in self.partner_ids:
-            self.partner_id = partner.id
-            self.change_partner()
-            self._update()
+        """Actualiza todos los partners en un solo lote para evitar N+1 de red.
+        Respeta la selección de campos del usuario en field_to_update_ids."""
+        self.ensure_one()
+        if self.partner_ids:
+            # Usar el método masivo del modelo que procesa en lotes de 100
+            # Pasamos field_to_update_ids para que solo actualice lo seleccionado
+            return self.partner_ids.update_multiple_from_padron_arca(field_to_update_ids=self.field_to_update_ids)
 
         self.write({"state": "finished"})
         return {

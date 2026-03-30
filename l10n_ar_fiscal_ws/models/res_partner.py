@@ -36,22 +36,26 @@ class ResPartner(models.Model):
     # Separo esto para poder heredar de otros
     # modulos y extender los datos
     def parse_census_vals(self, census):
-        """Parse census data from ARCA Padrón A5.
+        """
+        Parse census data from ARCA Padrón A5.
 
         Expected format:
-                - direccion: Street address
-                - localidad: City name
-                - cod_postal: Postal code
-                - provincia: Province name
-                - imp_iva: VAT status (S=Active, N=Not inscribed)
-                - impuestos: List of tax IDs [10, 11, 12, etc]
-                - monotributo: Monotributo status (S/N)
+            - direccion: Street address
+            - localidad: City name
+            - cod_postal: Postal code
+            - provincia: Province name
+            - imp_iva: VAT status (S=Active, N=Not inscribed)
+            - impuestos: List of tax IDs [10, 11, 12, etc]
+            - monotributo: Monotributo status (S/N)
 
         Args:
             census: Dict with flat data structure
 
         Returns:
             dict: Processed values ready for partner update
+
+        Nota: Esta función está preparada para ser extendida por otros módulos Odoo.
+        Puede ser sobreescrita para adaptar el parseo a nuevos campos o lógicas específicas.
         """
 
         # Soportar tanto diccionarios como objetos con atributos
@@ -68,9 +72,13 @@ class ResPartner(models.Model):
             # por ej. monotributista devuelve N
             imp_iva = "NI"
 
+        # Mapeo básico de campos
+        city_value = get_value(census, "localidad")
+        _logger.debug("Mapeando campo city desde localidad: '%s'", city_value)
+
         vals = {
             "street": get_value(census, "direccion"),
-            "city": get_value(census, "localidad"),
+            "city": city_value,
             "zip": get_value(census, "cod_postal"),
             "imp_iva_padron": imp_iva,
             "last_update_census": fields.Date.today(),
@@ -109,18 +117,6 @@ class ResPartner(models.Model):
                     ],
                     limit=1,
                 )
-                if state:
-                    vals["city"] = "Ciudad Autónoma de Buenos Aires"
-            # Para provincias con localidad (o sin localidad si no es CABA)
-            elif localidad or not is_caba:
-                state = self.env["res.country.state"].search(
-                    [
-                        ("name", "ilike", provincia),
-                        ("code", "not in", caba_codes),
-                        ("country_id.code", "=", "AR"),
-                    ],
-                    limit=1,
-                )
 
             if state:
                 vals["state_id"] = state.id
@@ -141,11 +137,45 @@ class ResPartner(models.Model):
                     resp_type = self.env.ref("l10n_ar.res_IVAE").id
                     vals["l10n_ar_afip_responsibility_type_id"] = resp_type
             except (ValueError, UserError, KeyError, AttributeError) as e:
-                msg = "No se pudo establecer tipo de responsabilidad ARCA: %s"
-                _logger.warning(msg, e)
+                msg = _("No se pudo establecer tipo de responsabilidad ARCA: %s") % e
+                _logger.warning(msg)
             except Exception:
                 _logger.exception("Unexpected error al establecer tipo de responsabilidad ARCA")
                 raise
+
+        # Manejo de Impuesto a las Ganancias en padrón (IDs 10, 11, 12)
+        imp_ganancias_field = partner_fields.get("imp_ganancias_padron")
+        if imp_ganancias_field:
+            impuestos = get_value(census, "impuestos", []) or []
+            if not isinstance(impuestos, list):
+                impuestos = [impuestos]
+            ganancias_ids = {"10", "11", "12"}
+            has_ganancias = False
+            for impuesto in impuestos:
+                if not isinstance(impuesto, dict):
+                    # Podria venir solo el ID como string o int
+                    impuesto_id = str(impuesto)
+                else:
+                    impuesto_id = str(impuesto.get("idImpuesto") or impuesto.get("id") or impuesto.get("codigo") or "")
+
+                if impuesto_id in ganancias_ids:
+                    has_ganancias = True
+                    break
+
+            # Ajustar el valor según el tipo de campo
+            field_type = getattr(imp_ganancias_field, "type", None)
+            if field_type == "boolean":
+                vals["imp_ganancias_padron"] = has_ganancias
+            elif field_type in ("char", "selection"):
+                # Compatibilidad con formatos S/N o AC/NI
+                selection = getattr(imp_ganancias_field, "selection", None)
+                true_key, false_key = "S", "N"
+                if selection:
+                    # Si es selección, intentar detectar AC/NI
+                    keys = [sk[0] for sk in (selection if isinstance(selection, list) else [])]
+                    if "AC" in keys:
+                        true_key, false_key = "AC", "NI"
+                vals["imp_ganancias_padron"] = true_key if has_ganancias else false_key
 
         return vals
 
@@ -171,7 +201,7 @@ class ResPartner(models.Model):
 
         # Personas físicas: apellido, nombre
         if apellido:
-            return f"{apellido}, {nombre}" if nombre else apellido
+            return "%s, %s" % (apellido, nombre) if nombre else apellido
 
         # Solo nombre sin apellido
         if nombre:
@@ -194,10 +224,7 @@ class ResPartner(models.Model):
                 try:
                     from zeep.helpers import serialize_object
 
-                    persona_data = serialize_object(
-                        persona_data,
-                        target_cls=dict,
-                    )
+                    persona_data = serialize_object(persona_data, target_cls=dict)
                 except Exception as e:
                     _logger.error(
                         "Error serializando persona_data: %s",
@@ -249,13 +276,23 @@ class ResPartner(models.Model):
             iva_activo = any(imp.get("idImpuesto") == 30 for imp in impuestos_list if isinstance(imp, dict))
             imp_iva = "S" if iva_activo else "N"
 
+            # Log de depuración para diagnóstico de campos faltantes
+            localidad_value = domicilio.get("localidad", "")
+            if not localidad_value:
+                _logger.debug(
+                    "ARCA no devolvió 'localidad' para CUIT %s. Domicilio completo: %s",
+                    datos_generales.get("idPersona", "desconocido"),
+                    domicilio,
+                )
+
             result = {
                 "direccion": domicilio.get("direccion", ""),
-                "localidad": domicilio.get("localidad", ""),
+                "localidad": localidad_value,
                 "cod_postal": domicilio.get("codPostal", ""),
                 "provincia": domicilio.get("descripcionProvincia", ""),
                 "monotributo": datos_monotributo.get("actividadMonotributista", "N"),
                 "imp_iva": imp_iva,
+                "impuestos": impuestos_list,
                 "tipoPersona": datos_generales.get("tipoPersona", ""),
             }
 
@@ -267,7 +304,7 @@ class ResPartner(models.Model):
 
         except Exception as e:
             _logger.error("Error en transformación segura de datos ARCA: %s", e, exc_info=True)
-            return {"afip_error": f"Error al transformar datos de ARCA: {str(e)}"}
+            return {"afip_error": _("Error al transformar datos de ARCA: %s") % str(e)}
 
     def _get_padron_service_and_method(self, service_code=None, method_name=None):
         """Obtiene el servicio y método ARCAWS para consultas.
@@ -354,8 +391,10 @@ class ResPartner(models.Model):
     def _transform_and_parse_persona_data(self, persona_data):
         """Transforma datos de persona ARCA a valores de partner Odoo sin alterar el casing.
 
+        Acepta objetos zeep o dicts.
+
         Args:
-            persona_data: Diccionario con datos de persona desde ARCA
+            persona_data: Diccionario u objeto Zeep con datos de persona desde ARCA
 
         Returns:
             dict: Valores para actualizar partner
@@ -363,44 +402,56 @@ class ResPartner(models.Model):
         Raises:
             UserError: Si hay error en la transformación o parseo
         """
-        census_data = self._transform_arca_persona_to_census(persona_data)
+        # Usar la transformación segura que ya maneja objetos Zeep y dicts
+        census_data = self._transform_arca_persona_to_census_safe(persona_data)
+
+        # Si hay error en el resultado de la transformación segura, lanzarlo
+        if isinstance(census_data, dict) and census_data.get("afip_error"):
+            raise UserError(census_data["afip_error"])
+
         vals = self.parse_census_vals(census_data)
         return vals
 
     def _transform_arca_persona_to_census(self, persona_data):
-        """Transform ARCA persona structure to census format.
+        """Transforma la estructura de persona ARCA a formato census.
 
-        Prepares data for parse_census_vals method.
+        Prepara datos para parse_census_vals.
 
         Args:
-            persona_data: Dictionary with nested ARCA response structure.
+            persona_data: Dict con estructura anidada de ARCA.
 
         Returns:
-            Dictionary with flat structure expected by parse_census_vals.
+            dict: Estructura plana esperada por parse_census_vals.
+            Si no hay denominación válida, retorna dict con 'afip_error' y datos_generales.
         """
         # Validación defensiva: verificar que persona_data no sea None
         if not persona_data or not isinstance(persona_data, dict):
-            msg = "ARCA no devolvió datos válidos " "(persona_data es None o inválido)"
-            raise UserError(_(msg))
+            msg = "ARCA no devolvió datos válidos (persona_data es None o inválido)"
+            return {"afip_error": _(msg)}
 
         # Construir denominación desde nombre y apellido
         datos_generales = persona_data.get("datosGenerales") or {}
         if not isinstance(datos_generales, dict):
             msg = "ARCA devolvió datos generales inválidos"
-            raise UserError(_(msg))
+            return {"afip_error": _(msg)}
 
         # Usar método auxiliar para construir denominación
         denominacion = self._build_denominacion(datos_generales)
 
         if not denominacion:
-            # Log para diagnóstico
+            # Log para diagnóstico y retorno explícito
             cuit = datos_generales.get("idPersona", "desconocido")
             _logger.warning(
-                "ARCA no devolvió nombre válido para CUIT %s. "
+                "ARCA no devolvió denominación válida para CUIT %s. "
                 "Se omitirá actualizar el campo 'name'. datos_generales: %s",
                 cuit,
                 datos_generales,
             )
+            return {
+                "afip_error": _("ARCA no devolvió denominación válida para CUIT %s. Verifique los datos en AFIP.")
+                % cuit,
+                "datos_generales": datos_generales,
+            }
 
         # Transformar estructura anidada a formato plano
         # con validaciones defensivas
@@ -431,6 +482,7 @@ class ResPartner(models.Model):
             "provincia": domicilio.get("descripcionProvincia", ""),
             "monotributo": datos_monotributo.get("actividadMonotributista", "N"),
             "imp_iva": imp_iva,
+            "impuestos": impuestos_list,
             "tipoPersona": datos_generales.get("tipoPersona", ""),
         }
 
@@ -494,7 +546,7 @@ class ResPartner(models.Model):
                 e,
             )
             return {
-                "afip_error": f"Error inesperado: {e}",
+                "afip_error": _("Error inesperado: %s") % e,
                 "xml_request": "",
                 "xml_response": "",
             }
@@ -534,12 +586,12 @@ class ResPartner(models.Model):
         # 5) Extraer datos de persona
         if not result or not hasattr(result, "persona") or not result.persona:
             _logger.warning(
-                "NO SE ENCONTRARON DATOS DE PERSONA para CUIT %s. " "Atributos de result: %s",
+                "NO SE ENCONTRARON DATOS DE PERSONA para CUIT %s. Atributos de result: %s",
                 cuit,
                 dir(result) if result else "None",
             )
             return {
-                "afip_error": (f"No se encontraron datos para CUIT {cuit}"),
+                "afip_error": _("No se encontraron datos para CUIT %s") % cuit,
                 "xml_request": xml_request,
                 "xml_response": xml_response,
             }
@@ -572,7 +624,7 @@ class ResPartner(models.Model):
                 exc_info=True,
             )
             return {
-                "afip_error": f"Error procesando datos: {parse_error}",
+                "afip_error": _("Error procesando datos: %s") % parse_error,
                 "xml_request": xml_request,
                 "xml_response": xml_response,
             }
@@ -649,10 +701,13 @@ class ResPartner(models.Model):
             )
             raise UserError(error_msg % (self.name, cuit, str(e)))
 
-    def update_multiple_from_padron_arca(self):
+    def update_multiple_from_padron_arca(self, field_to_update_ids=None):
         """Actualiza múltiples partners desde AFIP en lotes.
 
         Usando getPersonaList_v2, procesando en lotes de _PADRON_BATCH_SIZE.
+
+        Args:
+            field_to_update_ids: Recordset de ir.model.fields para filtrar campos
 
         Returns:
             dict: Notificación con resultado de la operación
@@ -663,6 +718,8 @@ class ResPartner(models.Model):
         company = self.env.company
         cuit_list = []
         partner_by_cuit = {}
+        # Nombres de campos a actualizar si se especifican
+        selected_fields = field_to_update_ids.mapped("name") if field_to_update_ids else []
 
         # Recolectar CUITs válidos
         for partner in self:
@@ -714,11 +771,31 @@ class ResPartner(models.Model):
                 personas = result.persona if isinstance(result.persona, list) else [result.persona]
 
                 for persona_data in personas:
-                    cuit = str(getattr(persona_data, "idPersona", ""))
+                    # Serializar persona_data a dict para asegurar consistencia
+                    try:
+                        if not isinstance(persona_data, dict):
+                            from zeep.helpers import serialize_object
+
+                            persona_data = serialize_object(persona_data, target_cls=dict)
+                    except Exception as e:
+                        _logger.error("Error serializando persona_data masivo: %s", e)
+                        errors.append(_("Error técnico al procesar datos de ARCA"))
+                        continue
+
+                    # Extraer CUIT (idPersona) de manera robusta
+                    dg = persona_data.get("datosGenerales") or {}
+                    cuit = str(persona_data.get("idPersona") or dg.get("idPersona") or "")
+
                     partner = partner_by_cuit.get(cuit)
                     if partner:
                         try:
+                            # Transformar y parsear
                             vals = partner._transform_and_parse_persona_data(persona_data)
+                            # Filtrar por campos seleccionados si existen
+                            if selected_fields:
+                                vals = {
+                                    k: v for k, v in vals.items() if k in selected_fields or k == "last_update_census"
+                                }
                             partner.write(vals)
                             updated += 1
                         except Exception as e:
@@ -765,7 +842,7 @@ class ResPartner(models.Model):
                 arca_errors = getattr(res, "arrayErrores", None)
                 if arca_errors and getattr(arca_errors, "codigoDescripcion", None):
                     error_descs = [getattr(e, "descripcion", str(e)) for e in arca_errors.codigoDescripcion]
-                    errors.append(f"{record.l10n_ar_vat}: {', '.join(error_descs)}")
+                    errors.append("%s: %s" % (record.l10n_ar_vat, ", ".join(error_descs)))
                     continue
 
                 obligado = getattr(res, "obligado", None)
@@ -775,7 +852,7 @@ class ResPartner(models.Model):
                 record.mipyme_from_amount = float(monto_desde) if monto_desde is not None else 0.0
 
             except Exception as e:
-                errors.append(f"{record.l10n_ar_vat}: {e}")
+                errors.append("%s: %s" % (record.l10n_ar_vat, e))
                 _logger.error("Error consultando MiPyme para %s: %s", record.l10n_ar_vat, e)
 
         if errors:

@@ -113,7 +113,7 @@ class ArcawsConnection(models.Model):
         endpoint_url = client.service._binding_options["address"]
         headers = {
             "Content-Type": "text/xml; charset=utf-8",
-            "SOAPAction": f"{self.arcaws_url}/{method_name}",
+            "SOAPAction": "%s/%s" % (self.arcaws_url, method_name),
         }
 
         response = client.transport.post_xml(address=endpoint_url, envelope=raw_xml, headers=headers)

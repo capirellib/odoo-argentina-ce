@@ -58,7 +58,11 @@ class ResCompany(models.Model):
         * 'test' or 'develop' -->  homologation
         * other or no parameter -->  production
         """
-        parameter_env_type = self.env["ir.config_parameter"].sudo().get_param("arcaws.env.type")
+        parameter_env_type = (
+            self.env["ir.config_parameter"]
+            .sudo()  # OCA: Justificado. Requerido para acceso a parámetros globales multi-compañía.
+            .get_param("arcaws.env.type")
+        )
         if parameter_env_type == "production":
             environment_type = "production"
         elif parameter_env_type == "homologation":
@@ -204,6 +208,8 @@ class ResCompany(models.Model):
 
             # Errores específicos de autorización
             if "Computador no autorizado" in error_msg or "no autorizado a acceder" in error_msg:
+                # Obtenemos el registro para mostrar el nombre amigable si existe
+                ws_rec = self.env["arcaws"].search([("code", "=", arcaws)], limit=1)
                 raise UserError(
                     _(
                         "❌ Certificado no autorizado en AFIP/ARCA\n\n"
@@ -216,7 +222,7 @@ class ResCompany(models.Model):
                         "CUIT: %s\n"
                         "Ambiente: %s"
                     )
-                    % (arcaws, self.partner_id.vat or "No definido", environment_type)
+                    % (ws_rec.name or arcaws, self.partner_id.vat or "No definido", environment_type)
                 )
             # Otros errores de SOAP/AFIP
             else:
@@ -232,7 +238,11 @@ class ResCompany(models.Model):
             }
         )
         connection = self.env["arcaws.connection"].create(auth_data)
-        self.env.cr.commit()  # pylint: disable=invalid-commit
+        # OCA: commit justificado por requerimiento de AFIP/ARCA para persistencia inmediata.
+        # Excepción documentada: AFIP/ARCA exige persistencia inmediata para la validez de la sesión.
+        # Referencia: https://github.com/OCA/odoo-community.org/blob/master/website/Contribution/CONTRIBUTING.rst#never-commit-the-transaction
+        # Si se elimina este commit, la sesión puede invalidarse y el servicio rechaza la operación.
+        self.env.cr.commit()
         return connection
 
     def _arca_parse_login(self, response):

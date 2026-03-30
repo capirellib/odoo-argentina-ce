@@ -41,7 +41,7 @@
     "token": connection.token,
     "sign": connection.sign,
     "cuitRepresentada": int(company_id.partner_id.ensure_vat()),
-    "idPersona": [int(cuit) for cuit in extra_values.get('cuit_list', [self.ensure_vat()])],
+    "idPersona": [int(cuit) for cuit in (extra_values or {}).get('cuit_list', [self.ensure_vat()])],
 }</field>
         <field name="response_dict"></field>
     </record>
@@ -66,7 +66,7 @@
         "cuitRepresentada": int(company_id.partner_id.ensure_vat()),
     },
     "cuitConsultada": int(self.ensure_vat()),
-    "fechaEmision": context_today(),
+    "fechaEmision": context_today().date(),
 }</field>
     </record>
 </odoo>
